@@ -1,0 +1,1295 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AutoClothes Sorter</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: satu meja kerja 3D yang menempel (alat dibongkar di sana), lalu laporan lab rata kiri di atas kartu abu-abu */
+:root {
+  --ground: #E2E4E6;      /* kartu abu-abu dingin, seperti kartu kalibrasi */
+  --surface: #EFF0F1;
+  --ink: #15171B;
+  --ink-2: #4C5259;
+  --rule: #BFC4CA;
+  --accent: #6B3E17;      /* cokelat kayu dari bodi alat */
+  --accent-ink: #FFFFFF;
+  --good: #24683A;
+  --bad: #A3302B;
+  --font-display: "Archivo", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", Roboto, Arial, sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  --fs: clamp(16px, 0.55vw + 11px, 23px);
+  --gutter: clamp(16px, 4vw, 72px);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #131518; --surface: #1B1E22; --ink: #ECEDEE; --ink-2: #A9AFB6; --rule: #353A41;
+    --accent: #D4A574; --accent-ink: #1A1207; --good: #6FCB8A; --bad: #F08A80; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --ground: #131518; --surface: #1B1E22; --ink: #ECEDEE; --ink-2: #A9AFB6; --rule: #353A41;
+  --accent: #D4A574; --accent-ink: #1A1207; --good: #6FCB8A; --bad: #F08A80; color-scheme: dark;
+}
+
+[hidden] { display: none !important; }
+html { scroll-behavior: auto; }
+body { background: var(--ground); color: var(--ink); font-family: var(--font-body); font-size: var(--fs); line-height: 1.55; -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+h1, h2, h3 { font-family: var(--font-display); font-stretch: 118%; line-height: 1.04; margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+p { margin: 0; }
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.data { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+
+/* ---------- navigasi ---------- */
+.topbar { position: fixed; z-index: 40; left: 0; right: 0; top: 0; padding: calc(env(safe-area-inset-top, 0px) + 12px) var(--gutter) 12px; display: flex; align-items: center; gap: 24px; background: var(--ground); border-bottom: 1px solid transparent; transition: border-color .2s ease; }
+.topbar.scrolled { border-bottom-color: var(--rule); }
+.brand { font-family: var(--font-display); font-weight: 800; font-stretch: 125%; font-size: 15px; pointer-events: auto; text-decoration: none; color: var(--ink); }
+.toc { display: flex; gap: 4px; margin-left: auto; pointer-events: auto; flex-wrap: wrap; justify-content: flex-end; }
+.toc a { font-size: 13px; color: var(--ink-2); text-decoration: none; padding: 4px 8px; border-radius: 4px; }
+.toc a b { font-family: var(--font-data); font-weight: 500; margin-right: 4px; color: var(--ink); }
+.toc a[aria-current="true"] { background: var(--ink); color: var(--ground); }
+.toc a[aria-current="true"] b { color: var(--ground); }
+.progress { position: fixed; z-index: 41; left: 0; top: 0; height: 3px; width: 100%; transform-origin: 0 50%; transform: scaleX(0); background: var(--accent); display: none; }
+body.presenter .topbar { display: none; }
+body.presenter .progress { display: block; }
+.keyhint { position: fixed; z-index: 40; right: var(--gutter); bottom: calc(env(safe-area-inset-bottom, 0px) + 14px); font-size: 13px; color: var(--ink-2); background: var(--surface); padding: 6px 10px; border-radius: 4px; border: 1px solid var(--rule); }
+.keyhint { display: flex; gap: 14px; }
+.keyhint kbd { font-family: var(--font-data); font-size: 12px; border: 1px solid var(--rule); border-radius: 3px; padding: 0 5px; background: var(--ground); }
+body.presenter .keyhint { display: none; }
+
+/* ---------- panggung 3D ---------- */
+.stage-wrap { position: relative; height: 1200vh; }
+.stage { position: sticky; top: 0; height: 100vh; height: 100svh; overflow: hidden; }
+.viewport { position: absolute; inset: 0; perspective: 1800px; perspective-origin: 50% 38%; }
+.cam { position: absolute; left: 50%; top: 56%; width: 0; height: 0; transform-style: preserve-3d; }
+.g { position: absolute; left: 0; top: 0; width: 0; height: 0; transform-style: preserve-3d; }
+.f { position: absolute; left: 0; top: 0; backface-visibility: hidden; transition: opacity .35s ease; }
+.wood { background-image: repeating-linear-gradient(92deg, rgba(0,0,0,.07) 0 2px, transparent 2px 9px, rgba(255,255,255,.04) 9px 11px, transparent 11px 23px); }
+.wood.v { background-image: repeating-linear-gradient(2deg, rgba(0,0,0,.07) 0 2px, transparent 2px 9px, rgba(255,255,255,.04) 9px 11px, transparent 11px 23px); }
+body.hemat .wood { background-image: none; }
+.part.dim .f { opacity: .13; }
+.part.clickable .f { cursor: pointer; }
+.shadow { position: absolute; left: 0; top: 0; width: 560px; height: 300px; transform: translate(-50%, -50%) rotateX(90deg); background: radial-gradient(closest-side, rgba(0,0,0,.28), rgba(0,0,0,0)); }
+body.hemat .shadow { display: none; }
+.oled { display: flex; align-items: center; justify-content: center; font-family: var(--font-data); font-weight: 500; font-size: 11px; color: #9FE8FF; letter-spacing: .04em; white-space: nowrap; overflow: hidden; }
+.binlabel { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; padding-bottom: 10px; gap: 4px; font-family: var(--font-display); font-stretch: 112%; font-weight: 700; font-size: 13px; color: #2A2C2F; }
+.binlabel i { display: block; width: 46px; height: 16px; border: 1.5px solid #2A2C2F; border-radius: 2px; }
+.pat-dots { background: radial-gradient(#2A2C2F 1.2px, transparent 1.6px) 0 0 / 6px 6px; }
+.pat-lines { background: repeating-linear-gradient(45deg, #2A2C2F 0 1.5px, transparent 1.5px 5px); }
+.pat-grid { background: repeating-linear-gradient(0deg, #2A2C2F 0 1.2px, transparent 1.2px 5px), repeating-linear-gradient(90deg, #2A2C2F 0 1.2px, transparent 1.2px 5px); }
+.cone { position: absolute; left: 0; top: 0; width: 80px; height: 30px; transform: translate(-50%, -50%) rotateX(90deg); background: radial-gradient(closest-side, rgba(255,247,214,.95), rgba(255,247,214,0)); opacity: 0; }
+
+.leader { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.leader path { fill: none; stroke: var(--ink); stroke-width: 1.5; }
+.leader circle { fill: var(--accent); stroke: var(--ground); stroke-width: 3; }
+
+.hero-copy { position: absolute; left: var(--gutter); top: calc(env(safe-area-inset-top, 0px) + 76px); width: min(44vw, 760px); display: grid; gap: 28px; pointer-events: none; }
+.hero-copy h1 { font-size: clamp(40px, 6.2vw, 124px); font-weight: 860; font-stretch: 125%; letter-spacing: -0.035em; line-height: .9; }
+.hero-copy p { max-width: 34ch; color: var(--ink-2); font-size: clamp(16px, 1.2vw, 24px); }
+.hero-copy p strong { color: var(--ink); font-weight: 600; }
+.hero-foot { position: absolute; left: var(--gutter); right: var(--gutter); bottom: calc(env(safe-area-inset-bottom, 0px) + 64px); display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; pointer-events: none; }
+.strip { display: flex; gap: 6px; flex-wrap: wrap; }
+.strip span { display: block; width: clamp(18px, 2vw, 34px); height: clamp(18px, 2vw, 34px); border-radius: 2px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.14); }
+.strip-cap { font-size: 13px; color: var(--ink-2); margin-top: 8px; }
+.scrollcue { font-size: 14px; color: var(--ink-2); display: flex; align-items: center; gap: 10px; }
+.scrollcue svg { width: 14px; height: 22px; }
+.scrollcue rect { fill: none; stroke: currentColor; stroke-width: 1.5; }
+.scrollcue line { stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; animation: cue 1.8s ease-in-out infinite; }
+@keyframes cue { 0%, 100% { transform: translateY(0); opacity: 1; } 60% { transform: translateY(6px); opacity: .2; } }
+
+.panel { position: absolute; right: var(--gutter); top: 50%; width: min(32vw, 540px); transform: translateY(-50%); opacity: 0; transition: opacity .3s ease; }
+.panel.on { opacity: 1; }
+.panel .kicker { font-size: 14px; color: var(--ink-2); margin-bottom: 14px; display: flex; gap: 12px; align-items: baseline; }
+.panel .kicker .data { color: var(--ink); }
+.panel h2 { font-size: clamp(28px, 2.7vw, 54px); font-weight: 780; margin-bottom: 18px; }
+.panel .body { color: var(--ink); max-width: 38ch; }
+.panel dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 20px; margin: 22px 0 0; padding-top: 16px; border-top: 1px solid var(--rule); font-size: .82em; }
+.panel dt { color: var(--ink-2); }
+.panel dd { margin: 0; }
+.panel .partnav { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 26px; }
+.panel .partnav button { border: 1px solid var(--rule); background: transparent; border-radius: 3px; padding: 4px 10px; font-size: 14px; cursor: pointer; }
+.panel .partnav button[aria-current="true"] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+.steps { display: flex; gap: 4px; margin-bottom: 18px; }
+.steps i { flex: 1; height: 4px; background: var(--rule); border-radius: 2px; }
+.steps i.done { background: var(--ink); }
+.meter { display: grid; grid-template-columns: 5.5em minmax(0, 1fr) 5em; gap: 6px 12px; align-items: center; font-size: .78em; margin-top: 18px; }
+.meter .bar { height: 10px; background: var(--rule); border-radius: 2px; overflow: hidden; }
+.meter .bar span { display: block; height: 100%; background: var(--ink); transform-origin: 0 50%; }
+.meter .on { font-weight: 600; }
+.verdict { margin-top: 18px; display: flex; gap: 14px; align-items: center; }
+.verdict .chip { width: 44px; height: 44px; border-radius: 3px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.15); flex: none; }
+
+/* ---------- laporan (bagian bawah) ---------- */
+.report { padding-inline: var(--gutter); }
+.sec { max-width: 1280px; margin-inline: auto; padding-block: clamp(72px, 12vh, 150px); border-top: 1px solid var(--rule); display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 8fr); gap: 32px 64px; }
+.sec-head { position: relative; }
+.sec-head .no { font-family: var(--font-data); font-size: 14px; color: var(--ink-2); display: block; margin-bottom: 18px; }
+.sec-head h2 { font-size: clamp(32px, 3.4vw, 62px); font-weight: 780; }
+.sec-head p { margin-top: 20px; color: var(--ink-2); max-width: 34ch; }
+.sec-body { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 40px; align-content: start; }
+.sec-body > * { min-width: 0; }
+.lead { font-size: 1.12em; max-width: 46ch; }
+.src { font-size: 14px; color: var(--ink-2); }
+.src a { color: inherit; }
+.problem-text { font-family: var(--font-display); font-stretch: 108%; font-weight: 650; font-size: clamp(24px, 2.2vw, 40px); line-height: 1.22; max-width: 30ch; text-wrap: pretty; }
+.answer-text { font-size: 1.12em; max-width: 46ch; padding-left: 20px; border-left: 4px solid var(--accent); }
+.problems { display: grid; gap: 28px; counter-reset: pr; }
+.problems > div { display: grid; grid-template-columns: 2.4em minmax(0, 1fr); gap: 4px 16px; }
+.problems > div::before { counter-increment: pr; content: counter(pr); font-family: var(--font-display); font-weight: 800; font-stretch: 125%; font-size: 1.6em; line-height: 1; grid-row: span 2; }
+.problems h3 { font-size: 1.15em; font-stretch: 110%; font-weight: 700; }
+.problems p { color: var(--ink-2); max-width: 52ch; }
+.stat { display: flex; gap: 28px; align-items: baseline; flex-wrap: wrap; padding: 22px 0; border-block: 1px solid var(--rule); }
+.stat b { font-family: var(--font-display); font-weight: 860; font-stretch: 125%; font-size: clamp(40px, 4.4vw, 76px); line-height: 1; }
+.stat span { max-width: 30ch; color: var(--ink-2); }
+
+.seg { display: inline-flex; flex-wrap: wrap; gap: 0; border: 1px solid var(--ink); border-radius: 4px; overflow: hidden; }
+.seg button { border: 0; background: transparent; padding: 9px 16px; cursor: pointer; font-size: .85em; border-right: 1px solid var(--ink); }
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--ground); }
+.cvd-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 18px 14px; }
+.cvd-grid figure { margin: 0; }
+.cvd-grid .sw { aspect-ratio: 1; max-width: 100%; border-radius: 3px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.14); transition: background-color .4s ease; }
+.cvd-grid figcaption { font-size: 14px; margin-top: 8px; line-height: 1.3; }
+.cvd-grid figcaption small { display: block; color: var(--ink-2); font-size: 12px; }
+.pairs { display: grid; gap: 10px; }
+.pairs h3 { font-size: 1em; font-weight: 700; font-stretch: 108%; }
+.pair { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 16px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--rule); font-size: .9em; }
+.pair .two { display: flex; }
+.pair .two span { width: 34px; height: 34px; border-radius: 2px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.14); }
+.pair .two span + span { margin-left: -6px; box-shadow: 0 0 0 2px var(--ground), inset 0 0 0 1px rgba(0,0,0,.14); }
+
+/* sensor */
+.sensor { display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: 40px; align-items: start; }
+.array { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; padding: 14px; background: #1E2A44; border-radius: 4px; max-width: 100%; }
+.array i { aspect-ratio: 1; border-radius: 2px; display: grid; place-items: center; font-style: normal; font-family: var(--font-data); font-size: 10px; color: rgba(255,255,255,.75); opacity: .28; transition: opacity .25s ease, transform .25s ease; }
+.array i.on { opacity: 1; transform: scale(1.06); }
+.array i[data-k="r"] { background: #C8423B; }
+.array i[data-k="g"] { background: #3E8B4E; }
+.array i[data-k="b"] { background: #3C63B5; }
+.array i[data-k="c"] { background: #B9BEC6; color: #1E2A44; }
+.ctrl { display: grid; gap: 22px; }
+.ctrl label { display: block; font-size: .8em; color: var(--ink-2); margin-bottom: 8px; }
+.pinrow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.pinrow button { border: 1px solid var(--rule); background: var(--surface); border-radius: 4px; padding: 8px 6px; cursor: pointer; text-align: left; font-size: .75em; line-height: 1.3; }
+.pinrow button b { display: block; font-size: 1.15em; }
+.pinrow button span { font-family: var(--font-data); color: var(--ink-2); }
+.pinrow button[aria-pressed="true"] { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+select { border: 1px solid var(--rule); background: var(--surface); border-radius: 4px; padding: 8px 10px; }
+.wave { width: 100%; height: 90px; display: block; }
+.wave path { fill: none; stroke: var(--ink); stroke-width: 1.6; }
+.wave line { stroke: var(--rule); }
+.freq { font-size: 1.4em; }
+
+/* coba */
+.lab { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 36px; align-items: start; }
+.lab-tag { display: inline-block; font-size: 13px; border: 1px solid var(--ink); border-radius: 3px; padding: 2px 8px; margin-bottom: 14px; }
+.picker { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.picker button { border: 1px solid var(--rule); background: var(--surface); border-radius: 4px; padding: 6px; cursor: pointer; text-align: left; font-size: 13px; line-height: 1.25; display: grid; gap: 6px; }
+.picker button span { display: block; height: 34px; border-radius: 2px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.14); }
+.picker button[aria-pressed="true"] { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.opts { display: flex; flex-wrap: wrap; gap: 14px 24px; align-items: center; margin-top: 18px; font-size: .85em; }
+.opts label { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+.opts input { accent-color: var(--accent); width: 18px; height: 18px; }
+.btn { border: 1px solid var(--ink); background: var(--ink); color: var(--ground); border-radius: 4px; padding: 9px 16px; cursor: pointer; font-size: .85em; font-weight: 500; }
+.btn.ghost { background: transparent; color: var(--ink); }
+.btn:disabled { opacity: .45; cursor: default; }
+.schem { width: 100%; height: auto; display: block; background: var(--surface); border-radius: 4px; }
+.guess { margin-top: 16px; padding: 16px; border: 1px dashed var(--ink-2); border-radius: 4px; display: grid; gap: 12px; }
+.guess .row { display: flex; gap: 8px; flex-wrap: wrap; }
+.readout { width: 100%; border-collapse: collapse; font-size: .8em; margin-top: 16px; }
+.readout th { text-align: left; font-weight: 400; color: var(--ink-2); padding: 7px 12px 7px 0; border-bottom: 1px solid var(--rule); width: 38%; vertical-align: top; }
+.readout td { padding: 7px 0; border-bottom: 1px solid var(--rule); }
+.bigname { font-family: var(--font-display); font-weight: 820; font-stretch: 122%; font-size: clamp(30px, 3vw, 54px); line-height: 1.05; margin-top: 6px; }
+.result-line { margin-top: 10px; font-size: .9em; }
+.result-line .ok { color: var(--good); font-weight: 600; }
+.result-line .no { color: var(--bad); font-weight: 600; }
+
+/* tabel */
+.tbl-wrap { overflow-x: auto; }
+table.spec { width: 100%; border-collapse: collapse; font-size: .82em; min-width: 560px; }
+table.spec th { text-align: left; font-weight: 500; color: var(--ink-2); border-bottom: 1.5px solid var(--ink); padding: 8px 14px 8px 0; }
+table.spec td { border-bottom: 1px solid var(--rule); padding: 9px 14px 9px 0; vertical-align: top; }
+table.spec td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.muted { color: var(--ink-2); }
+.wiring { width: 100%; min-width: 760px; height: auto; display: block; }
+.wiring text { font-family: var(--font-body); fill: var(--ink); font-size: 13px; }
+.wiring .pin { font-family: var(--font-data); font-size: 12px; fill: var(--ink-2); }
+.wiring .mod { fill: var(--surface); stroke: var(--ink); stroke-width: 1.5; }
+.wiring .esp { fill: var(--ink); }
+.wiring .esp-t { fill: var(--ground); }
+.wiring .w { fill: none; stroke: var(--ink); stroke-width: 1.4; }
+.wiring .w5 { fill: none; stroke: var(--accent); stroke-width: 2.2; }
+.wiring .wg { fill: none; stroke: var(--ink-2); stroke-width: 1.4; stroke-dasharray: 5 4; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: 14px; color: var(--ink-2); }
+.legend i { display: inline-block; width: 26px; height: 0; border-top: 2px solid var(--ink); vertical-align: middle; margin-right: 8px; }
+.legend i.p5 { border-top: 3px solid var(--accent); }
+.legend i.pg { border-top: 2px dashed var(--ink-2); }
+.empty { border: 1px dashed var(--ink-2); border-radius: 4px; padding: 28px; display: grid; gap: 10px; }
+.empty h3 { font-size: 1.1em; font-stretch: 110%; }
+.bars { display: grid; gap: 12px; }
+.bars .row { display: grid; grid-template-columns: 9em minmax(0, 1fr) 4.5em; gap: 12px; align-items: center; font-size: .85em; }
+.bars .track { height: 22px; background: var(--surface); border: 1px solid var(--rule); border-radius: 2px; overflow: hidden; }
+.bars .fill { height: 100%; background: var(--ink); }
+.twocol { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 40px; }
+.twocol h3 { font-size: 1.1em; font-stretch: 110%; margin-bottom: 14px; }
+.twocol ul { margin: 0; padding-left: 1.1em; display: grid; gap: 10px; }
+.twocol li { max-width: 46ch; }
+.team { display: grid; gap: 6px; }
+.team .nm { font-family: var(--font-display); font-weight: 820; font-stretch: 122%; font-size: clamp(30px, 3vw, 52px); }
+.closing { font-size: 1.2em; max-width: 36ch; }
+.foot { max-width: 1280px; margin-inline: auto; padding-block: 28px 80px; font-size: 13px; color: var(--ink-2); border-top: 1px solid var(--rule); }
+
+@media (max-width: 900px) {
+  .toc { display: none; }
+  .hero-copy { width: auto; right: var(--gutter); gap: 14px; top: calc(env(safe-area-inset-top, 0px) + 56px); }
+  .hero-copy p { font-size: 15px; }
+  .hero-foot { bottom: calc(env(safe-area-inset-bottom, 0px) + 20px); }
+  .scrollcue { display: none; }
+  .cam { top: 40%; }
+  .panel { left: 0; right: 0; top: auto; bottom: 0; width: auto; transform: none; max-height: 48%; overflow-y: auto; background: var(--surface); border-top: 1px solid var(--rule); padding: 18px 16px calc(env(safe-area-inset-bottom, 0px) + 18px); }
+  .panel h2 { font-size: 26px; margin-bottom: 10px; }
+  .panel .body { font-size: 15px; }
+  .leader { display: none; }
+  .keyhint { display: none; }
+  .sec { grid-template-columns: minmax(0, 1fr); }
+  .cvd-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .sensor, .lab, .twocol { grid-template-columns: minmax(0, 1fr); }
+  .picker { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 520px) {
+  .cvd-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .pinrow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .scrollcue line { animation: none; }
+  .f, .cvd-grid .sw, .array i, .panel { transition: none; }
+}
+</style>
+<style>body{margin:0}img{max-width:100%}</style>
+</head>
+<body>
+
+<div class="progress" id="progress"></div>
+<header class="topbar">
+  <a class="brand" href="#alat">AutoClothes Sorter</a>
+  <nav class="toc" id="toc" aria-label="Bagian presentasi"></nav>
+</header>
+
+<main>
+  <section class="stage-wrap" id="alat" aria-label="Model alat AutoClothes Sorter">
+    <div class="stage" id="stage">
+      <div class="viewport"><div class="cam" id="cam"></div></div>
+      <svg class="leader" id="leader" aria-hidden="true"></svg>
+
+      <div class="hero-copy" id="heroCopy">
+        <h1>AutoClothes<br>Sorter</h1>
+        <p>Alat yang <strong>menyebutkan nama warna pakaian</strong> lalu memilahnya ke tiga wadah. Dibuat dari ESP32, sensor warna TCS3200, dan dua servo, untuk membantu penyandang buta warna.</p>
+      </div>
+      <div class="hero-foot" id="heroFoot">
+        <div>
+          <div class="strip" id="heroStrip" aria-hidden="true"></div>
+          <div class="strip-cap">Dua belas warna kain yang dipakai di simulasi halaman ini</div>
+        </div>
+        <div class="scrollcue"><svg viewBox="0 0 14 22" aria-hidden="true"><rect x="1" y="1" width="12" height="20" rx="6"/><line x1="7" y1="6" x2="7" y2="9"/></svg>Gulir untuk membongkar alat</div>
+      </div>
+
+      <aside class="panel" id="panel" aria-live="polite"></aside>
+    </div>
+  </section>
+
+  <div class="report">
+    <section class="sec" id="masalah">
+      <div class="sec-head">
+        <span class="no">Bagian 4</span>
+        <h2>Permasalahan</h2>
+      </div>
+      <div class="sec-body">
+        <p class="problem-text">Cuma ngerti hitam dan putih, sisanya asal-asalan. Bahaya banget, bisa luntur. Yang buta warna atau tunanetra lebih parah lagi, tidak bisa ngenalin warna sama sekali, ujung-ujungnya baju rusak dan mereka jadi nggak bisa mandiri.</p>
+        <p class="answer-text">Nah, solusi ini datang buat kasih jawaban instan: warna apa sih ini? Biar semua orang bisa nyuci baju dengan tenang, mandiri, tanpa overthinking.</p>
+        <div class="stat">
+          <b>1 dari 12</b>
+          <span>laki-laki mengalami buta warna, dan sekitar 1 dari 200 perempuan.</span>
+        </div>
+        <p class="src" id="srcStat"></p>
+
+        <div>
+          <h3 style="font-size:1.25em;font-stretch:112%;margin-bottom:10px">Coba lihat dengan mata mereka</h3>
+          <p class="muted" style="max-width:52ch;margin-bottom:18px">Pilih jenis buta warna. Kotak warna berubah sesuai simulasi, sementara tulisan di bawahnya tetap menunjukkan nama yang dibaca alat.</p>
+          <div class="seg" id="cvdSeg" role="group" aria-label="Jenis penglihatan">
+            <button type="button" id="cvd-normal" data-t="normal" aria-pressed="true">Normal</button>
+            <button type="button" id="cvd-protan" data-t="protan" aria-pressed="false">Protanopia</button>
+            <button type="button" id="cvd-deutan" data-t="deutan" aria-pressed="false">Deuteranopia</button>
+            <button type="button" id="cvd-tritan" data-t="tritan" aria-pressed="false">Tritanopia</button>
+          </div>
+        </div>
+        <div class="cvd-grid" id="cvdGrid"></div>
+        <div class="pairs" id="pairs"></div>
+        <p class="src">Simulasi memakai matriks Machado, Oliveira &amp; Fernandes (2009), keparahan penuh, dihitung di ruang RGB linear. Selisih warna memakai ΔE CIE76. <a href="https://www.inf.ufrgs.br/~oliveira/pubs_files/CVD_Simulation/CVD_Simulation.html" target="_blank" rel="noopener">Sumber matriks</a></p>
+      </div>
+    </section>
+
+    <section class="sec" id="sensor">
+      <div class="sec-head">
+        <span class="no">Bagian 5</span>
+        <h2>Mata alat: TCS3200</h2>
+        <p>Sensor ini tidak memotret. Ia mengukur seberapa banyak cahaya merah, hijau, dan biru yang dipantulkan kain.</p>
+      </div>
+      <div class="sec-body">
+        <p class="lead">Di dalam chip ada 64 fotodioda: 16 berfilter merah, 16 hijau, 16 biru, dan 16 tanpa filter. Pin S2 dan S3 memilih kelompok mana yang dibaca. Hasilnya berupa gelombang kotak yang makin rapat ketika cahayanya makin terang.</p>
+        <div class="sensor">
+          <div>
+            <div class="array" id="array" role="img" aria-label="Larik 8 kali 8 fotodioda"></div>
+            <p class="src" style="margin-top:8px">Susunan ilustratif. Urutan pada chip aslinya bisa berbeda, jumlah per filter tetap 16.</p>
+          </div>
+          <div class="ctrl">
+            <div>
+              <label>Pin S2 dan S3: filter yang dibaca</label>
+              <div class="pinrow" id="pinrow"></div>
+            </div>
+            <div>
+              <label for="scale">Pin S0 dan S1: skala frekuensi keluaran</label>
+              <select id="scale">
+                <option value="0">S0 L, S1 L: mati (hemat daya)</option>
+                <option value="0.02">S0 L, S1 H: 2%</option>
+                <option value="0.2" selected>S0 H, S1 L: 20% (dipakai alat ini)</option>
+                <option value="1">S0 H, S1 H: 100%</option>
+              </select>
+            </div>
+            <div>
+              <label for="bright">Cahaya yang dipantulkan kain: <span id="brightVal" class="data">60%</span></label>
+              <input type="range" id="bright" min="0" max="100" value="60">
+            </div>
+            <div>
+              <svg class="wave" id="wave" viewBox="0 0 600 90" preserveAspectRatio="none" aria-hidden="true"></svg>
+              <p><span class="freq data" id="freq">0 Hz</span> <span class="muted" style="font-size:.8em">contoh frekuensi keluaran pin OUT</span></p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec" id="coba">
+      <div class="sec-head">
+        <span class="no">Bagian 6</span>
+        <h2>Coba AutoClothes Sorter</h2>
+        <p>Pilih kain. Simulasi menjalankan langkah yang sama dengan program di ESP32, dari frekuensi mentah sampai sudut servo.</p>
+      </div>
+      <div class="sec-body">
+        <div class="lab">
+          <div>
+            <span class="lab-tag">Simulasi, bukan hasil uji alat</span>
+            <div class="picker" id="picker" role="group" aria-label="Pilih kain"></div>
+            <div class="opts">
+              <label for="guessMode"><input type="checkbox" id="guessMode"> Tebak dulu sebelum hasil keluar</label>
+              <label for="assistMode"><input type="checkbox" id="assistMode"> Mode Bantu Warna (hanya sebut warna)</label>
+            </div>
+            <div class="guess" id="guessBox" hidden>
+              <p>Menurutmu kain ini masuk wadah mana?</p>
+              <div class="row">
+                <button type="button" class="btn ghost" data-g="Terang">1 Terang</button>
+                <button type="button" class="btn ghost" data-g="Gelap">2 Gelap</button>
+                <button type="button" class="btn ghost" data-g="Berwarna">3 Berwarna</button>
+              </div>
+            </div>
+          </div>
+          <div>
+            <svg class="schem" id="schem" viewBox="0 0 460 300" role="img" aria-label="Tampak depan alat: bilik baca, dua flap, tiga wadah"></svg>
+            <div id="resultBox"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec" id="rakitan">
+      <div class="sec-head">
+        <span class="no">Bagian 7</span>
+        <h2>Komponen dan rangkaian</h2>
+        <p>Semua mesin ada di ruang belakang. Servo mendapat 5 V langsung dari adaptor, bukan dari pin ESP32.</p>
+      </div>
+      <div class="sec-body">
+        <div class="tbl-wrap"><table class="spec" id="bom"></table></div>
+        <div>
+          <div class="tbl-wrap"><svg class="wiring" id="wiring" viewBox="0 0 980 520" role="img" aria-label="Diagram kabel ESP32 ke sensor, layar, servo, tombol, dan catu daya"></svg></div>
+          <div class="legend" style="margin-top:12px"><span><i></i>sinyal</span><span><i class="p5"></i>daya 5 V</span><span><i class="pg"></i>ground bersama</span><span>Nomor pin bisa disesuaikan</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec" id="uji">
+      <div class="sec-head">
+        <span class="no">Bagian 8</span>
+        <h2>Hasil uji</h2>
+        <p>Tiap warna kain diuji berulang kali di bawah kondisi yang sama. Angka di sini hanya dari pengujian alat sungguhan.</p>
+      </div>
+      <div class="sec-body" id="ujiBody"></div>
+    </section>
+
+    <section class="sec" id="batas">
+      <div class="sec-head">
+        <span class="no">Bagian 9</span>
+        <h2>Batasan dan langkah berikutnya</h2>
+        <p>Ini purwarupa skala kecil. Kami tulis apa yang belum bisa dilakukan alat ini.</p>
+      </div>
+      <div class="sec-body">
+        <div class="twocol">
+          <div>
+            <h3>Yang belum bisa</h3>
+            <ul>
+              <li>Satu pakaian dibaca sebagai satu warna dominan. Kain bermotif atau bergaris belum didukung.</li>
+              <li>Hasil bacaan dipengaruhi jarak kain ke sensor, cahaya sekitar, dan tekstur bahan.</li>
+              <li>Ukuran wadah dan tenaga servo SG90 baru cukup untuk potongan kain kecil, belum untuk baju tebal.</li>
+              <li>Nama warna dibatasi pada daftar pendek supaya tidak salah sebut.</li>
+            </ul>
+          </div>
+          <div>
+            <h3>Rencana pengembangan</h3>
+            <ul>
+              <li>Kotak dan wadah ukuran penuh dengan servo bertenaga lebih besar, misalnya MG996R.</li>
+              <li>Suara yang menyebutkan nama warna, supaya bisa dipakai penyandang tunanetra.</li>
+              <li>Membaca beberapa titik pada kain untuk mengenali dua warna sekaligus.</li>
+              <li>Baterai isi ulang supaya alat bisa dipindah ke mana saja.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec" id="tim">
+      <div class="sec-head">
+        <span class="no">Bagian 10</span>
+        <h2>Tim</h2>
+      </div>
+      <div class="sec-body">
+        <div class="team" id="team"></div>
+        <p class="closing">Warna seharusnya bisa diketahui sendiri, tanpa harus menebak atau bertanya.</p>
+        <div><button type="button" class="btn ghost" id="toTop">Kembali ke awal</button></div>
+      </div>
+    </section>
+    <p class="foot">AutoClothes Sorter, purwarupa untuk lomba ide ITB 2026. Semua angka frekuensi di halaman ini adalah contoh simulasi.</p>
+  </div>
+</main>
+<div class="keyhint" id="keyhint"><span>Maju <kbd>→</kbd> <kbd>spasi</kbd></span> <span>Mundur <kbd>←</kbd></span> <span>Bagian <kbd>1</kbd> sampai <kbd>0</kbd></span> <span>Presenter <kbd>P</kbd></span></div>
+
+<script>
+// ===================== LOGIKA WARNA (dipakai simulasi & animasi) =====================
+// Semua angka frekuensi di sini adalah CONTOH untuk simulasi, bukan hasil ukur alat.
+
+const SWATCHES = [
+  { id: 'putih',    name: 'Putih',       hex: '#F2F1EC' },
+  { id: 'krem',     name: 'Krem',        hex: '#E9DCC0' },
+  { id: 'abutua',   name: 'Abu-abu tua', hex: '#4A4B4F' },
+  { id: 'hitam',    name: 'Hitam',       hex: '#1E1E20' },
+  { id: 'merah',    name: 'Merah',       hex: '#B8282E' },
+  { id: 'hijau',    name: 'Hijau',       hex: '#3F7D3A' },
+  { id: 'cokelat',  name: 'Cokelat',     hex: '#6A4630' },
+  { id: 'kuning',   name: 'Kuning',      hex: '#E8C547' },
+  { id: 'birumuda', name: 'Biru muda',   hex: '#79A9D8' },
+  { id: 'birutua',  name: 'Biru tua',    hex: '#1F2F5C' },
+  { id: 'ungu',     name: 'Ungu',        hex: '#6B3F8C' },
+  { id: 'pink',     name: 'Pink muda',   hex: '#E58FAE' },
+];
+
+// Kategori wadah dan sudut servo (90 = datar, 45 = miring kiri, 135 = miring kanan)
+const CATS = {
+  Terang:   { bin: 1, s1: 45,  s2: 45,  pattern: 'dots',  label: 'Terang' },
+  Gelap:    { bin: 2, s1: 45,  s2: 135, pattern: 'lines', label: 'Gelap' },
+  Berwarna: { bin: 3, s1: 135, s2: 90,  pattern: 'grid',  label: 'Berwarna' },
+};
+
+// Contoh kalibrasi: frekuensi (Hz) saat sensor melihat kertas putih dan kain hitam, skala 20%
+const CAL = {
+  white: { r: 9200, g: 8600, b: 10400, c: 28000 },
+  black: { r: 820,  g: 760,  b: 900,   c: 2400 },
+};
+
+function hex2rgb(h) { h = h.replace('#', ''); return [0, 2, 4].map(i => parseInt(h.substr(i, 2), 16)); }
+function rgb2hex(r, g, b) { return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('').toUpperCase(); }
+function clamp(v, a = 0, b = 1) { return Math.max(a, Math.min(b, v)); }
+function s2l(v) { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }
+function l2s(v) { v = clamp(v); return Math.round(255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(v, 1 / 2.4) - 0.055)); }
+
+// Simulasi bacaan TCS3200: cahaya pantul (linear) dipetakan ke rentang kalibrasi
+function sensorRead(hex) {
+  const [r, g, b] = hex2rgb(hex).map(s2l);
+  const c = (r + g + b) / 3;
+  const f = (k, x) => Math.round(CAL.black[k] + (CAL.white[k] - CAL.black[k]) * x);
+  return { r: f('r', r), g: f('g', g), b: f('b', b), c: f('c', c) };
+}
+
+// Normalisasi terhadap kalibrasi putih & hitam, hasil 0..255 (sRGB)
+function normalize(raw) {
+  const n = k => l2s((raw[k] - CAL.black[k]) / (CAL.white[k] - CAL.black[k]));
+  return { r: n('r'), g: n('g'), b: n('b') };
+}
+
+function rgb2hsv({ r, g, b }) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+  let h = 0;
+  if (d > 0) {
+    if (max === r) h = 60 * (((g - b) / d) % 6);
+    else if (max === g) h = 60 * ((b - r) / d + 2);
+    else h = 60 * ((r - g) / d + 4);
+  }
+  if (h < 0) h += 360;
+  return { h, s: max === 0 ? 0 : d / max, v: max };
+}
+
+// Aturan: dulu cek "berwarna atau tidak" (saturasi), lalu "terang atau gelap" (kecerahan)
+function classify({ h, s, v }) {
+  let name, cat;
+  if (s < 0.22) {
+    if (s >= 0.10 && v >= 0.75 && h >= 25 && h <= 65) name = 'Krem';
+    else if (v >= 0.88) name = 'Putih';
+    else if (v >= 0.70) name = 'Abu-abu muda';
+    else if (v >= 0.45) name = 'Abu-abu';
+    else if (v >= 0.20) name = 'Abu-abu tua';
+    else name = 'Hitam';
+    cat = v >= 0.62 ? 'Terang' : 'Gelap';
+  } else {
+    let base;
+    if (h < 12 || h >= 345) base = 'Merah';
+    else if (h < 40) base = v < 0.6 ? 'Cokelat' : 'Oranye';
+    else if (h < 68) base = 'Kuning';
+    else if (h < 165) base = 'Hijau';
+    else if (h < 200) base = 'Tosca';
+    else if (h < 255) base = 'Biru';
+    else if (h < 290) base = 'Ungu';
+    else base = 'Pink';
+    name = base;
+    if (base !== 'Cokelat') {
+      if (v < 0.45) name = base + ' tua';
+      else if (s < 0.45 && v > 0.8) name = base + ' muda';
+    }
+    if (v < 0.45) cat = 'Gelap';
+    else if (s < 0.35 && v >= 0.8) cat = 'Terang';
+    else cat = 'Berwarna';
+  }
+  return { name, cat };
+}
+
+function analyze(hex) {
+  const raw = sensorRead(hex);
+  const norm = normalize(raw);
+  const hsv = rgb2hsv(norm);
+  const cls = classify(hsv);
+  return { raw, norm, hsv, ...cls, ...CATS[cls.cat] };
+}
+
+// ---------- Simulasi buta warna: Machado, Oliveira & Fernandes (2009), keparahan 1.0, di ruang RGB linear
+const CVD = {
+  normal: null,
+  protan: [0.152286, 1.052583, -0.204868, 0.114503, 0.786281, 0.099216, -0.003882, -0.048116, 1.051998],
+  deutan: [0.367322, 0.860646, -0.227968, 0.280085, 0.672501, 0.047413, -0.011820, 0.042940, 0.968881],
+  tritan: [1.255528, -0.076749, -0.178779, -0.078411, 0.930809, 0.147602, 0.004733, 0.691367, 0.303900],
+};
+function simulateCVD(hex, type) {
+  const m = CVD[type];
+  if (!m) return hex.toUpperCase();
+  const [r, g, b] = hex2rgb(hex).map(s2l);
+  return rgb2hex(l2s(m[0] * r + m[1] * g + m[2] * b), l2s(m[3] * r + m[4] * g + m[5] * b), l2s(m[6] * r + m[7] * g + m[8] * b));
+}
+function hex2lab(hex) {
+  const [r, g, b] = hex2rgb(hex).map(s2l);
+  let x = (0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047;
+  let y = (0.2126 * r + 0.7152 * g + 0.0722 * b);
+  let z = (0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883;
+  const f = t => t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116;
+  x = f(x); y = f(y); z = f(z);
+  return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
+}
+function deltaE(a, b) { const A = hex2lab(a), B = hex2lab(b); return Math.hypot(A[0] - B[0], A[1] - B[1], A[2] - B[2]); }
+
+// Pasangan kain yang paling sulit dibedakan pada satu jenis penglihatan
+function confusablePairs(type, n = 3) {
+  const out = [];
+  for (let i = 0; i < SWATCHES.length; i++) for (let j = i + 1; j < SWATCHES.length; j++) {
+    const a = SWATCHES[i], b = SWATCHES[j];
+    const normalDE = deltaE(a.hex, b.hex);
+    const simDE = deltaE(simulateCVD(a.hex, type), simulateCVD(b.hex, type));
+    if (normalDE > 25) out.push({ a, b, normalDE, simDE });
+  }
+  return out.sort((x, y) => x.simDE - y.simDE).slice(0, n);
+}
+
+// ---------- Lintasan pakaian melewati flap (koordinat dunia, y ke atas). u: 0..1
+// Flap 1 berporos di (64, 70), Flap 2 di (-64, 10). Sudut flap dalam derajat CSS (positif = searah jarum jam).
+const P = {
+  rest1: [64, 80], tip1R: [129, 57], tip1L: [-1, 57],
+  rest2: [-64, 20], tip2L: [-129, -3], tip2R: [1, -3],
+  bin: { 1: [-128, -106], 2: [0, -106], 3: [128, -106] },
+};
+const TILT = 36;
+function lerp(a, b, t) { return a + (b - a) * t; }
+function seg(u, a, b) { return clamp((u - a) / (b - a)); }
+function eio(t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
+function ein(t) { return t * t; }
+function lerp2(A, B, t) { return [lerp(A[0], B[0], t), lerp(A[1], B[1], t)]; }
+
+function sortTimeline(cat, u) {
+  let pos = P.rest1, rot = 0, f1 = 0, f2 = 0;
+  if (cat === 'Berwarna') {
+    f1 = TILT * eio(seg(u, 0, 0.2)) * (1 - eio(seg(u, 0.9, 1)));
+    const a = eio(seg(u, 0.2, 0.45)), b = ein(seg(u, 0.45, 0.8));
+    if (u < 0.45) { pos = lerp2(P.rest1, P.tip1R, a); rot = 11 * a; }
+    else { pos = lerp2(P.tip1R, P.bin[3], b); rot = 11 * (1 - b); }
+  } else {
+    const dir = cat === 'Terang' ? -1 : 1;
+    f1 = -TILT * eio(seg(u, 0, 0.12)) * (1 - eio(seg(u, 0.3, 0.5)));
+    f2 = dir * TILT * eio(seg(u, 0.5, 0.62)) * (1 - eio(seg(u, 0.9, 1)));
+    const tip2 = dir < 0 ? P.tip2L : P.tip2R, bin = P.bin[CATS[cat].bin];
+    if (u < 0.3) { const t = eio(seg(u, 0.12, 0.3)); pos = lerp2(P.rest1, P.tip1L, t); rot = -11 * t; }
+    else if (u < 0.62) { const t = eio(seg(u, 0.3, 0.42)); pos = lerp2(P.tip1L, P.rest2, t); rot = -11 * (1 - t); }
+    else if (u < 0.78) { const t = eio(seg(u, 0.62, 0.78)); pos = lerp2(P.rest2, tip2, t); rot = dir * 11 * t; }
+    else { const t = ein(seg(u, 0.78, 0.95)); pos = lerp2(tip2, bin, t); rot = dir * 11 * (1 - t); }
+  }
+  return { x: pos[0], y: pos[1], rot, f1, f2 };
+}
+// Sudut flap (derajat CSS) ke sudut servo (derajat)
+function servoDeg(flapAngle) { return Math.round(90 + flapAngle * 45 / TILT); }
+
+
+</script>
+<script>
+// =====================================================================
+//  ISI DI SINI: data tim, harga komponen, dan hasil uji alat sungguhan
+// =====================================================================
+const TEAM = {
+  nama: '[Nama tim]',
+  sekolah: '[Nama sekolah]',
+  anggota: ['[Anggota 1]', '[Anggota 2]', '[Anggota 3]'],
+  kontak: '[email atau nomor kontak tim]',
+};
+// Harga dalam rupiah. Biarkan null kalau belum tahu.
+const HARGA = { esp32: null, tcs: null, servo: null, oled: null, tombol: null, adaptor: null, kapasitor: null, kotak: null, wadah: null, kabel: null };
+// Hasil uji alat sungguhan. Contoh baris: { warna: 'Merah', percobaan: 20, benar: 18 }
+const TEST_DATA = [];
+const KONDISI_UJI = 'Ruangan dalam, bilik baca tertutup, jarak kain ke sensor tetap, kalibrasi putih dan hitam dilakukan sebelum pengujian.';
+// =====================================================================
+
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
+const clampN = (v, a, b) => Math.max(a, Math.min(b, v));
+const smooth = t => t * t * (3 - 2 * t);
+
+const PARTS = [
+  { id: 'lid', name: 'Tutup dan panel', body: 'Menutup kotak dan memuat layar OLED serta dua tombol: Mulai dan Bantu Warna. Di layar inilah nama warna muncul.', comp: 'Layar OLED 0,96" I2C, 2 tombol tekan', pin: 'OLED SDA GPIO 21, SCL GPIO 22. Tombol GPIO 32 dan 33.', cam: [-24, -30] },
+  { id: 'frame', name: 'Rangka kayu', body: 'Alas, dinding samping, dan dinding belakang. Bagian depan sengaja terbuka supaya pakaian mudah ditaruh dan diambil.', comp: 'Kayu atau MDF', pin: 'Tidak ada', cam: [-22, -42] },
+  { id: 'hood', name: 'Bilik baca', body: 'Kerudung hitam doff di atas Flap 1. Menghalangi cahaya luar, jadi sensor hanya membaca cahaya LED yang dipantulkan kain.', comp: 'Sensor warna TCS3200 dengan 4 LED putih', pin: 'S0 GPIO 25, S1 GPIO 26, S2 GPIO 27, S3 GPIO 14, OUT GPIO 34', cam: [-16, -26] },
+  { id: 'flap1', name: 'Flap 1, atas', body: 'Tempat pakaian dibaca. Servo 1 bertanya: berwarna atau tidak? Kalau berwarna, flap miring ke kanan ke Wadah 3. Kalau tidak, miring ke kiri dan pakaian turun ke Flap 2.', comp: 'Servo 1, SG90 atau MG90S', pin: 'Sinyal GPIO 18, daya 5 V adaptor', cam: [-12, -20] },
+  { id: 'flap2', name: 'Flap 2, bawah', body: 'Servo 2 bertanya: terang atau gelap? Terang miring ke kiri ke Wadah 1. Gelap miring ke kanan ke Wadah 2.', comp: 'Servo 2, SG90 atau MG90S', pin: 'Sinyal GPIO 19, daya 5 V adaptor', cam: [-12, -20] },
+  { id: 'bins', name: 'Tiga wadah', body: 'Wadah 1 Terang, Wadah 2 Gelap, Wadah 3 Berwarna. Tiap wadah diberi tulisan dan pola, bukan warna saja, supaya tetap bisa dibedakan penyandang buta warna.', comp: 'Wadah plastik atau cetak 3D', pin: 'Tidak ada', cam: [-18, -24] },
+  { id: 'esp', name: 'ESP32', body: 'Otak alat di ruang belakang. Membaca frekuensi dari sensor, menghitung warna, memilih wadah, lalu menggerakkan servo dan menulis ke layar.', comp: 'ESP32 DevKit', pin: 'Dipasang di balik dinding belakang', cam: [-20, -148] },
+  { id: 'psu', name: 'Catu daya', body: 'Adaptor 5 V memberi daya ke servo dan ESP32. Kapasitor menahan lonjakan arus saat servo bergerak supaya ESP32 tidak reset.', comp: 'Adaptor 5 V 2 A, kapasitor 470 sampai 1000 µF', pin: 'Ground semua komponen disatukan', cam: [-20, -148] },
+];
+
+const STEPS = [
+  { name: 'Taruh', body: 'Pakaian diletakkan di Flap 1, tepat di bawah bilik baca.' },
+  { name: 'Mulai', body: 'Tombol Mulai ditekan. Empat LED putih di modul sensor menyala.' },
+  { name: 'Baca', body: 'TCS3200 membaca empat kali: filter merah, hijau, biru, lalu tanpa filter. Tiap bacaan berupa frekuensi.' },
+  { name: 'Putuskan', body: 'ESP32 membandingkan bacaan dengan kalibrasi putih dan hitam, mengubahnya ke HSV, lalu memilih nama warna dan wadah.' },
+  { name: 'Tampilkan', body: 'Layar OLED menulis nama warna dengan huruf besar.' },
+  { name: 'Arahkan', body: 'Biru tua termasuk Gelap. Flap 1 miring ke kiri, pakaian turun ke Flap 2. Flap 2 miring ke kanan, pakaian jatuh ke Wadah 2.' },
+  { name: 'Kembali', body: 'Kedua flap kembali datar. Alat siap untuk pakaian berikutnya.' },
+];
+const DEMO = SWATCHES.find(s => s.id === 'birutua');
+const DEMO_A = analyze(DEMO.hex);
+
+// ---------------------------------------------------------------------
+//  Model 3D dari div (CSS 3D). Koordinat dunia: x kanan, y atas, z ke depan.
+// ---------------------------------------------------------------------
+const cam = $('#cam');
+const SH = { front: 1, back: .7, left: .8, right: .88, top: 1.14, bottom: .6 };
+function shade(hex, k) { const [r, g, b] = hex2rgb(hex); const f = v => Math.max(0, Math.min(255, Math.round(v * k))); return `rgb(${f(r)},${f(g)},${f(b)})`; }
+function grp(x = 0, y = 0, z = 0, extra = '') { const g = document.createElement('div'); g.className = 'g'; g.style.transform = `translate3d(${x}px,${-y}px,${z}px) ${extra}`; return g; }
+function box(w, h, d, color, o = {}) {
+  const g = grp(o.x || 0, o.y || 0, o.z || 0, o.t || '');
+  const defs = {
+    front: [w, h, `translateZ(${d / 2}px)`], back: [w, h, `rotateY(180deg) translateZ(${d / 2}px)`],
+    right: [d, h, `rotateY(90deg) translateZ(${w / 2}px)`], left: [d, h, `rotateY(-90deg) translateZ(${w / 2}px)`],
+    top: [w, d, `rotateX(90deg) translateZ(${h / 2}px)`], bottom: [w, d, `rotateX(-90deg) translateZ(${h / 2}px)`],
+  };
+  g.faces = {};
+  for (const k in defs) {
+    if (o.skip && o.skip.includes(k)) continue;
+    const [fw, fh, t] = defs[k];
+    const f = document.createElement('div');
+    f.className = 'f' + (o.cls ? ' ' + o.cls : '') + (o.grainV && (k === 'left' || k === 'right' || k === 'front' || k === 'back') ? ' v' : '');
+    f.style.cssText = `width:${fw}px;height:${fh}px;transform:translate(-50%,-50%) ${t};background-color:${shade(color, SH[k])}`;
+    g.appendChild(f); g.faces[k] = f;
+  }
+  return g;
+}
+const WOOD = '#5C3513', TAN = '#A87B52', BIN = '#AEB1B2', BLACK = '#202124', SERVO = '#2C5AA0', PCB = '#1F2B3E';
+
+const movers = [];      // tiap bagian yang bergerak saat dibongkar
+const anchors = {};     // titik untuk garis penunjuk
+function mover(partId, base, off, delay = 0) {
+  const g = grp(); g.classList.add('part'); g.dataset.part = partId;
+  cam.appendChild(g);
+  movers.push({ el: g, part: partId, base, off, delay });
+  return g;
+}
+function anchor(partId, parent, x, y, z) { const a = grp(x, y, z); parent.appendChild(a); anchors[partId] = a; }
+
+// bayangan lantai
+const shadowEl = document.createElement('div'); shadowEl.className = 'shadow';
+const shadowG = grp(0, -134, 10); shadowG.appendChild(shadowEl); cam.appendChild(shadowG);
+
+// 1. Tutup + panel OLED + tombol
+const lid = mover('lid', [0, 137, 0], [0, 170, 0], 0);
+lid.appendChild(box(444, 14, 216, WOOD, { cls: 'wood' }));
+const oledBox = box(76, 8, 46, '#111316', { x: -150, y: 11, z: 62 });
+lid.appendChild(oledBox);
+const oledScreen = oledBox.faces.top; oledScreen.classList.add('oled'); oledScreen.style.backgroundColor = '#06090D';
+oledScreen.style.width = '76px'; oledScreen.style.height = '46px'; oledScreen.textContent = 'SIAP';
+const btnStart = box(16, 8, 16, '#C9CCD0', { x: -88, y: 11, z: 70 });
+const btnAssist = box(16, 8, 16, '#C9CCD0', { x: -62, y: 11, z: 70 });
+lid.appendChild(btnStart); lid.appendChild(btnAssist);
+anchor('lid', lid, -120, 14, 60);
+
+// 2. Rangka: alas, kiri, kanan, belakang (bergerak terpisah)
+const floorM = mover('frame', [0, -126, 0], [0, -70, 0], .08);
+floorM.appendChild(box(420, 10, 200, WOOD, { cls: 'wood' }));
+const leftM = mover('frame', [-205, 4, 0], [-150, 0, 0], .05);
+leftM.appendChild(box(10, 250, 200, WOOD, { cls: 'wood', grainV: true }));
+const rightM = mover('frame', [205, 4, 0], [150, 0, 0], .05);
+rightM.appendChild(box(10, 250, 200, WOOD, { cls: 'wood', grainV: true }));
+const backM = mover('frame', [0, 4, -95], [0, 0, -70], .1);
+backM.appendChild(box(400, 250, 10, WOOD, { cls: 'wood', grainV: true }));
+anchor('frame', leftM, 0, 40, 100);
+
+// 3. Bilik baca + TCS3200 + cahaya LED
+const hood = mover('hood', [64, 113, 0], [0, 100, 0], .12);
+hood.appendChild(box(92, 34, 112, '#1A1B1D'));
+const tcs = box(34, 4, 34, SERVO, { y: -19 }); hood.appendChild(tcs);
+const lens = box(8, 3, 8, '#E9ECEF', { y: -22 }); hood.appendChild(lens);
+const leds = [[-11, -11], [11, -11], [-11, 11], [11, 11]].map(([x, z]) => { const l = box(5, 2, 5, '#F4F1E2', { x, y: -22, z }); hood.appendChild(l); return l; });
+const coneG = grp(0, -30, 0); const cone = document.createElement('div'); cone.className = 'cone'; coneG.appendChild(cone); hood.appendChild(coneG);
+anchor('hood', hood, 0, -20, 30);
+
+// Flap: dua pelat membentuk V di sebuah rotor, plus servo di belakang
+function buildFlap(partId, px, py, off, delay) {
+  const m = mover(partId, [px, py, 0], off, delay);
+  const rotor = grp(); m.appendChild(rotor);
+  const L = 66, A = 25 * Math.PI / 180, c = Math.cos(A), s = Math.sin(A);
+  rotor.appendChild(box(L, 5, 120, TAN, { x: -L / 2 * c, y: L / 2 * s, t: 'rotateZ(25deg)' }));
+  rotor.appendChild(box(L, 5, 120, TAN, { x: L / 2 * c, y: L / 2 * s, t: 'rotateZ(-25deg)' }));
+  rotor.appendChild(box(10, 10, 130, '#7E5634', { y: 0 }));                       // poros
+  m.appendChild(box(24, 26, 34, SERVO, { z: -78 }));                              // badan servo
+  m.appendChild(box(36, 4, 34, SERVO, { z: -78, y: 8 }));                          // telinga servo
+  anchor(partId, m, 0, 26, 50);
+  return rotor;
+}
+const rotor1 = buildFlap('flap1', 64, 70, [26, 50, 0], .16);
+const rotor2 = buildFlap('flap2', -64, 10, [-26, 10, 0], .2);
+
+// 6. Tiga wadah berdinding tebal, dengan label tulisan + pola
+const binsM = mover('bins', [0, -61, 12], [0, -40, 70], .22);
+const binDefs = [{ x: -128, n: 1, cat: 'Terang', pat: 'dots' }, { x: 0, n: 2, cat: 'Gelap', pat: 'lines' }, { x: 128, n: 3, cat: 'Berwarna', pat: 'grid' }];
+const binGroups = [];
+for (const b of binDefs) {
+  const bg = grp(b.x, 0, 0); binsM.appendChild(bg); binGroups.push(bg);
+  const W = 118, H = 120, D = 150, T = 6;
+  const front = box(W, H, T, BIN, { z: D / 2 - T / 2 });
+  bg.appendChild(front);
+  bg.appendChild(box(W, H, T, BIN, { z: -D / 2 + T / 2 }));
+  bg.appendChild(box(T, H, D - 2 * T, BIN, { x: -W / 2 + T / 2 }));
+  bg.appendChild(box(T, H, D - 2 * T, BIN, { x: W / 2 - T / 2 }));
+  bg.appendChild(box(W - 2 * T, T, D - 2 * T, BIN, { y: -H / 2 + T / 2 }));
+  bg.appendChild(box(W + 6, 5, 8, '#C4C7C9', { y: H / 2, z: D / 2 - 2 }));       // bibir depan
+  const lbl = document.createElement('div'); lbl.className = 'binlabel';
+  lbl.innerHTML = `<i class="pat-${b.pat}"></i><span>${b.n} ${b.cat}</span>`;
+  lbl.style.position = 'absolute'; lbl.style.inset = '0';
+  front.faces.front.appendChild(lbl);
+}
+anchor('bins', binsM, 128, 0, 80);
+
+// 7. ESP32 di ruang belakang
+const espM = mover('esp', [40, 40, -112], [150, 40, -190], .26);
+espM.appendChild(box(120, 64, 6, PCB, { t: '' }));
+espM.appendChild(box(44, 30, 5, '#AEB4BB', { x: -20, y: 6, z: -5 }));             // modul WiFi berpelindung logam
+espM.appendChild(box(104, 5, 6, '#C9A54A', { y: 28, z: -4 }));                    // header pin atas
+espM.appendChild(box(104, 5, 6, '#C9A54A', { y: -28, z: -4 }));                   // header pin bawah
+espM.appendChild(box(12, 8, 8, '#B9BEC4', { x: 54, y: 0, z: -5 }));               // port USB
+espM.appendChild(box(5, 5, 4, '#E44', { x: 30, y: -10, z: -5 }));                 // LED kecil
+anchor('esp', espM, 0, 0, -6);
+
+// 8. Catu daya
+const psuM = mover('psu', [-110, -40, -118], [-110, -60, -190], .3);
+psuM.appendChild(box(96, 56, 36, '#18191B'));
+psuM.appendChild(box(18, 18, 10, '#2F3134', { x: 38, y: 10, z: -20 }));          // jack DC
+psuM.appendChild(box(14, 28, 14, '#2E4A9B', { x: 70, y: -14, z: 0 }));           // kapasitor
+anchor('psu', psuM, 0, 0, -20);
+
+// Pakaian (potongan kain terlipat)
+const cloth = grp(); cloth.appendChild(box(54, 9, 66, DEMO.hex)); cam.appendChild(cloth); cloth.style.display = 'none';
+
+// klik bagian untuk lompat ke sorotannya
+for (const m of movers) m.el.addEventListener('click', () => { if (stageMode.startsWith('part')) goStage(partStop(PARTS.findIndex(p => p.id === m.part))); });
+
+// ---------------------------------------------------------------------
+//  Garis waktu scroll
+// ---------------------------------------------------------------------
+const T = { heroEnd: .035, exA: .04, exB: .17, partsA: .19, partsB: .63, asmA: .64, asmB: .71, pipeA: .73, pipeB: .99 };
+const PART_SPAN = (T.partsB - T.partsA) / PARTS.length;
+const STEP_SPAN = (T.pipeB - T.pipeA) / STEPS.length;
+const partStop = i => T.partsA + PART_SPAN * (i + .55);
+const stepStop = i => T.pipeA + STEP_SPAN * (i + .62);
+
+function camKeys() {
+  const k = [[0, -17, -27, .74, .13], [T.exA, -20, -34, .95, -.17], [T.exB, -22, -38, .8, -.17]];
+  PARTS.forEach((p, i) => { k.push([T.partsA + PART_SPAN * i + PART_SPAN * .25, p.cam[0], p.cam[1], p.id === 'esp' || p.id === 'psu' ? .86 : .8, -.17]); k.push([T.partsA + PART_SPAN * (i + 1) - .004, p.cam[0], p.cam[1], p.id === 'esp' || p.id === 'psu' ? .86 : .8, -.17]); });
+  k.push([T.asmB, -16, -24, .98, -.17], [T.pipeA, -11, -12, 1.1, -.17], [1, -11, -12, 1.1, -.17]);
+  return k;
+}
+const CAMK = camKeys();
+function camAt(p) {
+  for (let i = 0; i < CAMK.length - 1; i++) {
+    const a = CAMK[i], b = CAMK[i + 1];
+    if (p <= b[0]) { const t = smooth(clampN((p - a[0]) / Math.max(1e-6, b[0] - a[0]), 0, 1)); return a.map((v, j) => v + (b[j] - v) * t).slice(1); }
+  }
+  return CAMK[CAMK.length - 1].slice(1);
+}
+function explodeAt(p) {
+  if (p < T.exA) return 0;
+  if (p < T.exB) return (p - T.exA) / (T.exB - T.exA);
+  if (p < T.asmA) return 1;
+  if (p < T.asmB) return 1 - (p - T.asmA) / (T.asmB - T.asmA);
+  return 0;
+}
+
+const stageWrap = $('#alat'), stage = $('#stage'), panel = $('#panel'), leader = $('#leader');
+const heroCopy = $('#heroCopy'), heroFoot = $('#heroFoot');
+let stageMode = '', isNarrow = false, baseScale = 1, t0 = performance.now();
+
+function stageProgress() {
+  const r = stageWrap.getBoundingClientRect();
+  return clampN(-r.top / (r.height - innerHeight), 0, 1);
+}
+function layout() {
+  isNarrow = innerWidth <= 900;
+  baseScale = isNarrow ? Math.min(innerWidth * .82 / 480, innerHeight * .38 / 330) : Math.min(innerWidth * .46 / 480, innerHeight * .56 / 330);
+}
+
+function setFlap(rotor, deg) { rotor.style.transform = `rotateZ(${deg}deg)`; }
+function placeCloth(x, y, rot) { cloth.style.transform = `translate3d(${x}px,${-y}px,0px) rotateZ(${rot}deg)`; }
+
+function render(now) {
+  const p = stageProgress();
+  let [rx, ry, s, tx] = camAt(p);
+  if (p < T.heroEnd && !reduceMotion) ry += Math.sin((now - t0) / 2600) * 7 * (1 - p / T.heroEnd);
+  if (isNarrow) tx = 0;
+  const heroK = 1 - clampN(p / T.exA, 0, 1);
+  const ty = heroK * (isNarrow ? .17 : .04) * innerHeight;
+  if (isNarrow) s = s * (1 - heroK * .1) * (1 - explodeAt(p) * .22);
+  cam.style.transform = `translate3d(${tx * innerWidth}px,${ty}px,0) scale(${s * baseScale}) rotateX(${rx}deg) rotateY(${ry}deg)`;
+
+  const e = explodeAt(p);
+  for (const m of movers) {
+    const k = smooth(clampN((e - m.delay) / .66, 0, 1));
+    m.el.style.transform = `translate3d(${m.base[0] + m.off[0] * k}px,${-(m.base[1] + m.off[1] * k)}px,${m.base[2] + m.off[2] * k}px)`;
+  }
+  shadowEl.style.opacity = String(1 - e * .6);
+
+  const heroO = 1 - clampN(p / T.heroEnd, 0, 1);
+  heroCopy.style.opacity = heroO; heroFoot.style.opacity = heroO;
+  heroCopy.style.visibility = heroFoot.style.visibility = heroO < .01 ? 'hidden' : 'visible';
+
+  // mode panel
+  let mode;
+  if (p < T.heroEnd) mode = 'hero';
+  else if (p < T.partsA) mode = 'explode';
+  else if (p < T.partsB) mode = 'part' + Math.min(PARTS.length - 1, Math.floor((p - T.partsA) / PART_SPAN));
+  else if (p < T.pipeA) mode = 'assemble';
+  else mode = 'step' + Math.min(STEPS.length - 1, Math.floor((p - T.pipeA) / STEP_SPAN));
+  if (mode !== stageMode) { stageMode = mode; renderPanel(mode); }
+
+  // sorotan
+  const hl = mode.startsWith('part') ? PARTS[+mode.slice(4)].id : null;
+  for (const m of movers) { m.el.classList.toggle('dim', !!hl && m.part !== hl); m.el.classList.toggle('clickable', !!hl); }
+
+  // alur kerja
+  pipeline(p);
+  drawLeader(hl);
+  requestAnimationFrame(render);
+}
+
+function pipeline(p) {
+  const on = p >= T.asmB;
+  cloth.style.display = on ? '' : 'none';
+  let f1 = 0, f2 = 0, led = 0, oled = 'SIAP', press = 0;
+  if (on) {
+    const q = clampN((p - T.pipeA) / (T.pipeB - T.pipeA), 0, 1) * STEPS.length;
+    const k = Math.min(STEPS.length - 1, Math.floor(q)), u = q - Math.floor(q);
+    let cx = 64, cy = 80, rot = 0;
+    if (p < T.pipeA || k === 0) {
+      const t = p < T.pipeA ? 0 : smooth(clampN(u / .8, 0, 1));
+      cy = 80 + 4 * (1 - t); placeCloth(64, cy, 0); cloth.style.transform += ` translateZ(${(1 - t) * 230}px)`;
+    } else if (k <= 4) {
+      placeCloth(64, 80, 0);
+      if (k === 1) press = u < .4 ? 1 : 0;
+      led = k === 1 ? smooth(clampN((u - .3) / .4, 0, 1)) : (k <= 3 ? 1 : 0.3);
+      if (k >= 4) oled = DEMO_A.name.toUpperCase();
+    } else if (k === 5) {
+      const r = sortTimeline(DEMO_A.cat, u * .9); f1 = r.f1; f2 = r.f2; placeCloth(r.x, r.y, r.rot); oled = DEMO_A.name.toUpperCase();
+    } else {
+      const r = sortTimeline(DEMO_A.cat, .9 + u * .1); f1 = r.f1; f2 = r.f2; placeCloth(r.x, r.y, r.rot); oled = DEMO_A.name.toUpperCase();
+    }
+    // nilai langsung di panel
+    const sv1 = $('#sv1'), sv2 = $('#sv2');
+    if (sv1) sv1.textContent = servoDeg(f1) + '°';
+    if (sv2) sv2.textContent = servoDeg(f2) + '°';
+    if (k === 2) { const bars = $$('.meter .bar span', panel); const rows = $$('.meter .lbl', panel); const ph = Math.min(3, Math.floor(u * 4)); bars.forEach((b, i) => { b.style.transform = `scaleX(${i < ph ? b.dataset.v : i === ph ? b.dataset.v * ((u * 4) % 1) : 0})`; }); rows.forEach((r, i) => r.classList.toggle('on', i === ph)); }
+  }
+  setFlap(rotor1, f1); setFlap(rotor2, f2);
+  cone.style.opacity = String(led);
+  for (const l of leds) l.faces.top && (l.faces.bottom.style.backgroundColor = led > .5 ? '#FFFBEA' : '#D9D6C8');
+  if (oledScreen.textContent !== oled) oledScreen.textContent = oled;
+  btnStart.style.transform = `translate3d(-88px,${-11 + press * 4}px,70px)`;
+}
+
+function drawLeader(id) {
+  if (!id || isNarrow) { if (leader.innerHTML) leader.innerHTML = ''; return; }
+  const a = anchors[id].getBoundingClientRect(), sr = stage.getBoundingClientRect();
+  const h = $('h2', panel); if (!h) return;
+  const hr = h.getBoundingClientRect();
+  const ax = a.left - sr.left, ay = a.top - sr.top, ex = hr.left - sr.left - 18, ey = hr.top - sr.top + hr.height / 2;
+  const mx = ex - 40;
+  leader.innerHTML = `<path d="M${ax},${ay} L${mx},${ey} L${ex},${ey}"/><circle cx="${ax}" cy="${ay}" r="6"/>`;
+}
+
+function renderPanel(mode) {
+  let html = '';
+  if (mode === 'hero') { panel.classList.remove('on'); panel.innerHTML = ''; return; }
+  if (mode === 'explode') {
+    html = `<div class="kicker">Anatomi alat</div><h2>Delapan bagian, satu kotak</h2><p class="body">Kotak kayu dengan depan terbuka. Di dalamnya ada bilik baca, dua flap pengarah, dan tiga wadah. ESP32 dan catu daya disembunyikan di ruang belakang.</p>${partNav(-1)}`;
+  } else if (mode.startsWith('part')) {
+    const i = +mode.slice(4), pt = PARTS[i];
+    html = `<div class="kicker"><span class="data">${i + 1}/${PARTS.length}</span> Anatomi alat</div><h2>${pt.name}</h2><p class="body">${pt.body}</p>
+      <dl><dt>Komponen</dt><dd>${pt.comp}</dd><dt>Sambungan</dt><dd>${pt.pin}</dd></dl>${partNav(i)}`;
+  } else if (mode === 'assemble') {
+    html = `<div class="kicker">Cara kerja</div><h2>Dirakit kembali</h2><p class="body">Sekarang kita ikuti satu kain biru tua dari Flap 1 sampai masuk wadah. Ada tujuh langkah.</p>`;
+  } else {
+    const k = +mode.slice(4), st = STEPS[k], a = DEMO_A;
+    const steps = STEPS.map((_, j) => `<i class="${j <= k ? 'done' : ''}"></i>`).join('');
+    let extra = '';
+    if (k === 2) {
+      const max = 10400;
+      extra = `<div class="meter">${[['Merah', 'r'], ['Hijau', 'g'], ['Biru', 'b'], ['Tanpa filter', 'c']].map(([n, key]) => `<span class="lbl">${n}</span><div class="bar"><span data-v="${Math.min(1, a.raw[key] / (key === 'c' ? 28000 : max)).toFixed(3)}" style="transform:scaleX(0)"></span></div><span class="data">${a.raw[key].toLocaleString('id-ID')} Hz</span>`).join('')}</div>`;
+    } else if (k === 3) {
+      extra = `<dl><dt>Setelah kalibrasi</dt><dd class="data">R ${a.norm.r} G ${a.norm.g} B ${a.norm.b}</dd><dt>HSV</dt><dd class="data">H ${a.hsv.h.toFixed(0)}° S ${(a.hsv.s * 100).toFixed(0)}% V ${(a.hsv.v * 100).toFixed(0)}%</dd><dt>Berwarna?</dt><dd>Saturasi tinggi, tapi kecerahan di bawah 45%, jadi masuk Gelap</dd></dl>`;
+    } else if (k === 4) {
+      extra = `<div class="verdict"><span class="chip" style="background:${DEMO.hex}"></span><span class="bigname" style="font-size:clamp(26px,2.4vw,44px)">${a.name}</span></div>`;
+    } else if (k >= 5) {
+      extra = `<dl><dt>Kategori</dt><dd>${a.cat}, Wadah ${a.bin}</dd><dt>Servo 1</dt><dd class="data" id="sv1">90°</dd><dt>Servo 2</dt><dd class="data" id="sv2">90°</dd></dl>`;
+    }
+    html = `<div class="kicker"><span class="data">Langkah ${k + 1}/${STEPS.length}</span> Cara kerja</div><div class="steps">${steps}</div><h2>${st.name}</h2><p class="body">${st.body}</p>${extra}`;
+  }
+  panel.innerHTML = html;
+  panel.classList.add('on');
+  $$('.partnav button', panel).forEach(b => b.addEventListener('click', () => goStage(partStop(+b.dataset.i))));
+}
+function partNav(cur) {
+  return `<div class="partnav">${PARTS.map((p, i) => `<button type="button" data-i="${i}" aria-current="${i === cur}">${p.name.split(',')[0]}</button>`).join('')}</div>`;
+}
+
+// ---------------------------------------------------------------------
+//  Navigasi presentasi
+// ---------------------------------------------------------------------
+const SECTIONS = [
+  { key: '1', label: 'Alat', go: () => goStage(0) },
+  { key: '2', label: 'Anatomi', go: () => goStage(T.exB) },
+  { key: '3', label: 'Cara kerja', go: () => goStage(T.asmB - .005) },
+  { key: '4', label: 'Masalah', id: 'masalah' },
+  { key: '5', label: 'Sensor', id: 'sensor' },
+  { key: '6', label: 'Coba', id: 'coba' },
+  { key: '7', label: 'Rakitan', id: 'rakitan' },
+  { key: '8', label: 'Uji', id: 'uji' },
+  { key: '9', label: 'Batasan', id: 'batas' },
+  { key: '0', label: 'Tim', id: 'tim' },
+];
+function stageY(p) { return stageWrap.offsetTop + p * (stageWrap.offsetHeight - innerHeight); }
+function scrollToY(y) { window.scrollTo({ top: Math.round(y), behavior: reduceMotion ? 'auto' : 'smooth' }); }
+function goStage(p) { scrollToY(stageY(p)); }
+function secY(id) { return $('#' + id).getBoundingClientRect().top + scrollY - 56; }
+function stops() {
+  const s = [0, T.exB, ...PARTS.map((_, i) => partStop(i)), T.asmB - .005, ...STEPS.map((_, i) => stepStop(i))].map(stageY);
+  for (const sec of SECTIONS) if (sec.id) s.push(secY(sec.id));
+  return s.sort((a, b) => a - b);
+}
+function step(dir) {
+  const y = scrollY, list = stops();
+  const target = dir > 0 ? list.find(v => v > y + 8) : [...list].reverse().find(v => v < y - 8);
+  if (target !== undefined) scrollToY(target);
+}
+const toc = $('#toc');
+toc.innerHTML = SECTIONS.map(s => `<a href="#${s.id || 'alat'}" data-k="${s.key}"><b>${s.key}</b>${s.label}</a>`).join('');
+$$('a', toc).forEach(a => a.addEventListener('click', ev => { ev.preventDefault(); jump(a.dataset.k); }));
+function jump(k) { const s = SECTIONS.find(x => x.key === k); if (!s) return; s.go ? s.go() : scrollToY(secY(s.id)); }
+
+addEventListener('keydown', ev => {
+  const tag = (ev.target.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'select' || tag === 'textarea' || ev.metaKey || ev.ctrlKey || ev.altKey) return;
+  if (ev.key === 'ArrowDown' || ev.key === 'ArrowRight' || ev.key === 'PageDown' || (ev.key === ' ' && tag !== 'button')) { ev.preventDefault(); step(ev.shiftKey && ev.key === ' ' ? -1 : 1); }
+  else if (ev.key === 'ArrowUp' || ev.key === 'ArrowLeft' || ev.key === 'PageUp') { ev.preventDefault(); step(-1); }
+  else if (ev.key === 'Home') { ev.preventDefault(); goStage(0); }
+  else if (/^[0-9]$/.test(ev.key)) { jump(ev.key); }
+  else if (ev.key === 'p' || ev.key === 'P') { document.body.classList.toggle('presenter'); }
+});
+$('#toTop').addEventListener('click', () => goStage(0));
+
+const progress = $('#progress');
+function onScroll() {
+  const max = document.documentElement.scrollHeight - innerHeight;
+  progress.style.transform = `scaleX(${max > 0 ? scrollY / max : 0})`;
+  const p = stageProgress(), inStage = stageWrap.getBoundingClientRect().bottom > innerHeight * .5;
+  let cur = '1';
+  if (inStage) cur = p < T.exA ? '1' : p < T.asmB - .01 ? '2' : '3';
+  else for (const s of SECTIONS) if (s.id && $('#' + s.id).getBoundingClientRect().top < innerHeight * .5) cur = s.key;
+  $$('a', toc).forEach(a => a.setAttribute('aria-current', String(a.dataset.k === cur)));
+  $('#keyhint').hidden = !inStage;
+  $('.topbar').classList.toggle('scrolled', !inStage);
+}
+addEventListener('scroll', onScroll, { passive: true });
+addEventListener('resize', () => { layout(); onScroll(); });
+
+// mode hemat bila fps rendah
+(function fpsWatch() {
+  let n = 0, start = performance.now();
+  function tick(t) { n++; if (t - start < 3000) requestAnimationFrame(tick); else if (n / ((t - start) / 1000) < 40) document.body.classList.add('hemat'); }
+  requestAnimationFrame(tick);
+})();
+
+// hero strip
+$('#heroStrip').innerHTML = SWATCHES.map(s => `<span style="background:${s.hex}" title="${s.name}"></span>`).join('');
+
+// ---------------------------------------------------------------------
+//  Bagian 4: simulasi buta warna
+// ---------------------------------------------------------------------
+const CVD_NAME = { normal: 'penglihatan normal', protan: 'protanopia', deutan: 'deuteranopia', tritan: 'tritanopia' };
+$('#srcStat').innerHTML = 'Sumber: <a href="https://www.colourblindawareness.org/colour-blindness/" target="_blank" rel="noopener">Colour Blind Awareness</a>. Angka ini angka umum dunia; data khusus Indonesia belum kami cantumkan.';
+function renderCVD(type) {
+  $$('#cvdSeg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.t === type)));
+  $('#cvdGrid').innerHTML = SWATCHES.map(s => `<figure><div class="sw" style="background:${simulateCVD(s.hex, type)}"></div><figcaption>${analyze(s.hex).name}<small>dibaca alat</small></figcaption></figure>`).join('');
+  const pr = $('#pairs');
+  if (type === 'normal') { pr.innerHTML = `<h3>Pilih salah satu jenis buta warna</h3><p class="muted" style="font-size:.9em">Halaman ini lalu menghitung pasangan kain yang paling sulit dibedakan.</p>`; return; }
+  pr.innerHTML = `<h3>Paling mirip bagi ${CVD_NAME[type]}</h3>` + confusablePairs(type).map(x =>
+    `<div class="pair"><span class="two"><span style="background:${simulateCVD(x.a.hex, type)}"></span><span style="background:${simulateCVD(x.b.hex, type)}"></span></span><span>${x.a.name} dan ${x.b.name}</span><span class="data muted">ΔE ${x.simDE.toFixed(0)} <small>(normal ${x.normalDE.toFixed(0)})</small></span></div>`).join('');
+}
+$$('#cvdSeg button').forEach(b => b.addEventListener('click', () => renderCVD(b.dataset.t)));
+renderCVD('normal');
+
+// ---------------------------------------------------------------------
+//  Bagian 5: sensor TCS3200
+// ---------------------------------------------------------------------
+const FILTERS = [
+  { k: 'r', name: 'Merah', s2: 'L', s3: 'L' },
+  { k: 'b', name: 'Biru', s2: 'L', s3: 'H' },
+  { k: 'c', name: 'Tanpa filter', s2: 'H', s3: 'L' },
+  { k: 'g', name: 'Hijau', s2: 'H', s3: 'H' },
+];
+let curFilter = 'r';
+(function buildArray() {
+  const order = ['r', 'g', 'b', 'c'], cells = [];
+  for (let row = 0; row < 8; row++) for (let col = 0; col < 8; col++) cells.push(order[(row % 2) * 2 + (col % 2)]);
+  $('#array').innerHTML = cells.map(k => `<i data-k="${k}">${k === 'c' ? 'C' : k.toUpperCase()}</i>`).join('');
+  $('#pinrow').innerHTML = FILTERS.map(f => `<button type="button" id="flt-${f.k}" data-k="${f.k}" aria-pressed="false"><b>${f.name}</b><span>S2 ${f.s2} S3 ${f.s3}</span></button>`).join('');
+  $$('#pinrow button').forEach(b => b.addEventListener('click', () => { curFilter = b.dataset.k; updateSensor(); }));
+})();
+function updateSensor() {
+  $$('#array i').forEach(i => i.classList.toggle('on', i.dataset.k === curFilter));
+  $$('#pinrow button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.k === curFilter)));
+  const br = +$('#bright').value / 100, sc = +$('#scale').value;
+  $('#brightVal').textContent = Math.round(br * 100) + '%';
+  const f20 = CAL.black[curFilter] + (CAL.white[curFilter] - CAL.black[curFilter]) * br;
+  const f = f20 / 0.2 * sc;
+  $('#freq').textContent = sc === 0 ? 'Mati' : Math.round(f).toLocaleString('id-ID') + ' Hz';
+  const cycles = sc === 0 ? 0 : Math.max(1, Math.round(f / 20000 * 6 + 1));
+  let d = 'M0,72';
+  if (cycles === 0) d = 'M0,72 L600,72';
+  else { const w = 600 / cycles; for (let i = 0; i < cycles; i++) { const x = i * w; d += ` L${x},18 L${x + w / 2},18 L${x + w / 2},72 L${x + w},72`; } }
+  $('#wave').innerHTML = `<line x1="0" y1="72" x2="600" y2="72"/><path d="${d}"/>`;
+}
+$('#bright').addEventListener('input', updateSensor);
+$('#scale').addEventListener('change', updateSensor);
+updateSensor();
+
+// ---------------------------------------------------------------------
+//  Bagian 6: coba (simulasi interaktif)
+// ---------------------------------------------------------------------
+const schem = $('#schem');
+const sx = x => 230 + x, sy = y => 150 - y;
+(function buildSchem() {
+  const L = 66, A = 25 * Math.PI / 180, c = Math.cos(A) * L, s = Math.sin(A) * L;
+  const binsSvg = binDefs.map(b => `<g><path d="M${sx(b.x - 59)},${sy(0)} L${sx(b.x - 59)},${sy(-120)} L${sx(b.x + 59)},${sy(-120)} L${sx(b.x + 59)},${sy(0)}" fill="none" stroke="var(--ink)" stroke-width="3"/>
+    <rect x="${sx(b.x - 24)}" y="${sy(-50)}" width="48" height="16" fill="url(#p-${b.pat})" stroke="var(--ink)" stroke-width="1.2"/>
+    <text x="${sx(b.x)}" y="${sy(-90)}" text-anchor="middle" font-size="13" fill="var(--ink)" font-family="var(--font-body)">${b.n} ${b.cat}</text></g>`).join('');
+  schem.innerHTML = `<defs>
+    <pattern id="p-dots" width="6" height="6" patternUnits="userSpaceOnUse"><circle cx="3" cy="3" r="1.3" fill="var(--ink)"/></pattern>
+    <pattern id="p-lines" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="1.6" height="5" fill="var(--ink)"/></pattern>
+    <pattern id="p-grid" width="5" height="5" patternUnits="userSpaceOnUse"><path d="M0,0 H5 M0,0 V5" stroke="var(--ink)" stroke-width="1.3"/></pattern>
+    <radialGradient id="ledglow"><stop offset="0" stop-color="#FFF4CC" stop-opacity=".95"/><stop offset="1" stop-color="#FFF4CC" stop-opacity="0"/></radialGradient></defs>
+    <rect x="${sx(-210)}" y="${sy(144)}" width="420" height="14" fill="#5C3513"/>
+    <rect x="${sx(-210)}" y="${sy(130)}" width="10" height="260" fill="#5C3513"/><rect x="${sx(200)}" y="${sy(130)}" width="10" height="260" fill="#5C3513"/>
+    <rect x="${sx(-210)}" y="${sy(-120)}" width="420" height="10" fill="#5C3513"/>
+    <rect x="${sx(19)}" y="${sy(130)}" width="90" height="34" fill="#1A1B1D"/>
+    <ellipse id="sGlow" cx="${sx(64)}" cy="${sy(84)}" rx="44" ry="16" fill="url(#ledglow)" opacity="0"/>
+    <rect x="${sx(49)}" y="${sy(96)}" width="30" height="4" fill="#2C5AA0"/>
+    <text x="${sx(64)}" y="${sy(110)}" text-anchor="middle" font-size="11" fill="#E8E8E8" font-family="var(--font-data)">TCS3200</text>
+    ${binsSvg}
+    <g id="sFlap1"><line x1="${sx(64)}" y1="${sy(70)}" x2="${sx(64 - c)}" y2="${sy(70 + s)}" stroke="#A87B52" stroke-width="6" stroke-linecap="round"/><line x1="${sx(64)}" y1="${sy(70)}" x2="${sx(64 + c)}" y2="${sy(70 + s)}" stroke="#A87B52" stroke-width="6" stroke-linecap="round"/><circle cx="${sx(64)}" cy="${sy(70)}" r="5" fill="#2C5AA0"/></g>
+    <g id="sFlap2"><line x1="${sx(-64)}" y1="${sy(10)}" x2="${sx(-64 - c)}" y2="${sy(10 + s)}" stroke="#A87B52" stroke-width="6" stroke-linecap="round"/><line x1="${sx(-64)}" y1="${sy(10)}" x2="${sx(-64 + c)}" y2="${sy(10 + s)}" stroke="#A87B52" stroke-width="6" stroke-linecap="round"/><circle cx="${sx(-64)}" cy="${sy(10)}" r="5" fill="#2C5AA0"/></g>
+    <text x="${sx(64 + 74)}" y="${sy(78)}" font-size="11" fill="var(--ink-2)" font-family="var(--font-body)">Flap 1</text>
+    <text x="${sx(-64 - 112)}" y="${sy(18)}" font-size="11" fill="var(--ink-2)" font-family="var(--font-body)">Flap 2</text>
+    <g id="sCloth" opacity="0"><rect x="-26" y="-5" width="52" height="10" rx="2" stroke="var(--ink)" stroke-width="1"/></g>`;
+})();
+function schemState(f1, f2, x, y, rot, glow, show, color) {
+  $('#sFlap1').setAttribute('transform', `rotate(${f1} ${sx(64)} ${sy(70)})`);
+  $('#sFlap2').setAttribute('transform', `rotate(${f2} ${sx(-64)} ${sy(10)})`);
+  const c = $('#sCloth');
+  c.setAttribute('transform', `translate(${sx(x)} ${sy(y)}) rotate(${rot})`);
+  c.setAttribute('opacity', show ? 1 : 0);
+  if (color) c.firstElementChild.setAttribute('fill', color);
+  $('#sGlow').setAttribute('opacity', glow);
+}
+schemState(0, 0, 64, 80, 0, 0, false);
+
+let sel = null, anim = 0, guessed = null;
+$('#picker').innerHTML = SWATCHES.map(s => `<button type="button" id="kain-${s.id}" data-id="${s.id}" aria-pressed="false"><span style="background:${s.hex}"></span>${s.name}</button>`).join('');
+$$('#picker button').forEach(b => b.addEventListener('click', () => pick(b.dataset.id)));
+$$('#guessBox button').forEach(b => b.addEventListener('click', () => { guessed = b.dataset.g; $('#guessBox').hidden = true; reveal(); }));
+$('#guessMode').addEventListener('change', () => sel && pick(sel.id));
+$('#assistMode').addEventListener('change', () => sel && pick(sel.id));
+
+function pick(id) {
+  sel = SWATCHES.find(s => s.id === id); guessed = null; cancelAnimationFrame(anim);
+  $$('#picker button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.id === id)));
+  schemState(0, 0, 64, 80, 0, 0.9, true, sel.hex);
+  if ($('#guessMode').checked && !$('#assistMode').checked) {
+    $('#guessBox').hidden = false;
+    $('#resultBox').innerHTML = `<p class="result-line muted">Kain sudah di Flap 1 dan sedang dibaca. Tebak wadahnya dulu.</p>`;
+  } else { $('#guessBox').hidden = true; reveal(); }
+}
+function reveal() {
+  const a = analyze(sel.hex), assist = $('#assistMode').checked;
+  const g = guessed ? `<p class="result-line">Tebakanmu ${guessed}. ${guessed === a.cat ? '<span class="ok">Benar.</span>' : `<span class="no">Belum tepat</span>, jawabannya ${a.cat}.`}</p>` : '';
+  $('#resultBox').innerHTML = `<div class="bigname" aria-live="polite">${a.name}</div>${g}
+    <table class="readout"><tbody>
+      <tr><th>Frekuensi mentah</th><td class="data">R ${a.raw.r.toLocaleString('id-ID')}, G ${a.raw.g.toLocaleString('id-ID')}, B ${a.raw.b.toLocaleString('id-ID')}, C ${a.raw.c.toLocaleString('id-ID')} Hz</td></tr>
+      <tr><th>Setelah kalibrasi</th><td class="data">R ${a.norm.r}, G ${a.norm.g}, B ${a.norm.b}</td></tr>
+      <tr><th>HSV</th><td class="data">H ${a.hsv.h.toFixed(0)}°, S ${(a.hsv.s * 100).toFixed(0)}%, V ${(a.hsv.v * 100).toFixed(0)}%</td></tr>
+      ${assist ? `<tr><th>Mode</th><td>Bantu Warna: kain tidak dipilah</td></tr>` : `<tr><th>Wadah</th><td>${a.bin} ${a.cat}</td></tr><tr><th>Servo 1, Servo 2</th><td class="data">${a.s1}°, ${a.s2}°</td></tr>`}
+    </tbody></table>
+    <div class="opts"><button type="button" class="btn ghost" id="speak">Ucapkan nama warna</button>${assist ? '' : '<button type="button" class="btn ghost" id="replay">Ulangi gerakan</button>'}</div>
+    <p class="src" id="speakNote" style="margin-top:8px"></p>`;
+  $('#speak').addEventListener('click', () => speak(a.name));
+  const rp = $('#replay'); if (rp) rp.addEventListener('click', () => runSort(a));
+  if (!assist) runSort(a); else schemState(0, 0, 64, 80, 0, 0.9, true, sel.hex);
+}
+function runSort(a) {
+  cancelAnimationFrame(anim);
+  const dur = 2600, start = performance.now();
+  function f(t) {
+    const u = reduceMotion ? 1 : clampN((t - start) / dur, 0, 1);
+    const r = sortTimeline(a.cat, u);
+    schemState(r.f1, r.f2, r.x, r.y, r.rot, u < .05 ? .9 : 0, true, sel.hex);
+    if (u < 1) anim = requestAnimationFrame(f);
+  }
+  anim = requestAnimationFrame(f);
+}
+function speak(text) {
+  const note = $('#speakNote');
+  try {
+    if (!('speechSynthesis' in window)) throw 0;
+    const u = new SpeechSynthesisUtterance(text); u.lang = 'id-ID'; u.rate = .9;
+    speechSynthesis.cancel(); speechSynthesis.speak(u); note.textContent = '';
+  } catch (e) { note.textContent = 'Browser ini tidak bisa membacakan teks. Nama warna tetap tertulis di atas.'; }
+}
+
+// ---------------------------------------------------------------------
+//  Bagian 7: komponen dan rangkaian
+// ---------------------------------------------------------------------
+const BOM = [
+  ['ESP32 DevKit', 'Membaca sensor, menghitung warna, menggerakkan servo', 1, 'esp32'],
+  ['Sensor warna TCS3200', 'Membaca intensitas merah, hijau, biru, dan tanpa filter', 1, 'tcs'],
+  ['Servo SG90 atau MG90S', 'Memiringkan Flap 1 dan Flap 2', 2, 'servo'],
+  ['Layar OLED 0,96" I2C', 'Menampilkan nama warna', 1, 'oled'],
+  ['Tombol tekan', 'Mulai dan Mode Bantu Warna', 2, 'tombol'],
+  ['Adaptor 5 V 2 A', 'Sumber daya servo dan ESP32', 1, 'adaptor'],
+  ['Kapasitor 470 sampai 1000 µF', 'Menahan lonjakan arus servo', 1, 'kapasitor'],
+  ['Kotak kayu atau MDF', 'Rangka, tutup, bilik baca', 1, 'kotak'],
+  ['Wadah', 'Terang, Gelap, Berwarna', 3, 'wadah'],
+  ['Kabel jumper', 'Sambungan antar komponen', 1, 'kabel'],
+];
+const rp = v => 'Rp' + v.toLocaleString('id-ID');
+(function buildBom() {
+  let total = 0, known = true;
+  const rows = BOM.map(([n, f, q, k]) => { const h = HARGA[k]; if (h == null) known = false; else total += h * q; return `<tr><td>${n}</td><td>${f}</td><td class="num">${q}</td><td class="num ${h == null ? 'muted' : ''}">${h == null ? 'belum diisi' : rp(h * q)}</td></tr>`; }).join('');
+  $('#bom').innerHTML = `<thead><tr><th>Komponen</th><th>Fungsi</th><th style="text-align:right">Jumlah</th><th style="text-align:right">Harga</th></tr></thead><tbody>${rows}<tr><td colspan="3"><b>Total</b></td><td class="num"><b>${known ? rp(total) : '<span class="muted">belum lengkap</span>'}</b></td></tr></tbody>`;
+})();
+(function buildWiring() {
+  const W = $('#wiring');
+  const L = [['S0', 'GPIO 25', 92], ['S1', 'GPIO 26', 122], ['S2', 'GPIO 27', 152], ['S3', 'GPIO 14', 182], ['OUT', 'GPIO 34', 212], ['VCC', '3V3', 242]];
+  const O = [['SDA', 'GPIO 21', 322], ['SCL', 'GPIO 22', 352], ['VCC', '3V3', 382]];
+  const R = [['GPIO 18', 'Sinyal', 92, 'Servo 1, Flap 1'], ['GPIO 19', 'Sinyal', 192, 'Servo 2, Flap 2'], ['GPIO 32', '', 292, 'Tombol Mulai'], ['GPIO 33', '', 352, 'Tombol Bantu Warna']];
+  let s = '';
+  // ESP32
+  s += `<rect class="esp" x="390" y="56" width="200" height="370" rx="6"/><text class="esp-t" x="490" y="40" text-anchor="middle" style="fill:var(--ink);font-weight:600">ESP32 DevKit</text>`;
+  // TCS3200
+  s += `<rect class="mod" x="40" y="66" width="170" height="196" rx="4"/><text x="56" y="92" style="font-weight:600">TCS3200</text><text x="56" y="112" class="pin">bilik baca</text>`;
+  s += `<rect class="mod" x="40" y="300" width="170" height="100" rx="4"/><text x="56" y="326" style="font-weight:600">OLED 0,96"</text><text x="56" y="346" class="pin">tutup depan</text>`;
+  for (const [a, b, y] of [...L, ...O]) {
+    s += `<text class="pin" x="200" y="${y + 4}" text-anchor="end">${a}</text><path class="w" d="M210,${y} H390"/><text class="pin esp-t" x="400" y="${y + 4}" style="fill:var(--ground)">${b}</text>`;
+  }
+  for (const [a, b, y, n] of R) {
+    s += `<text class="pin" x="580" y="${y + 4}" text-anchor="end" style="fill:var(--ground)">${a}</text><path class="w" d="M590,${y} H770"/>`;
+  }
+  s += `<rect class="mod" x="770" y="66" width="170" height="62" rx="4"/><text x="786" y="92" style="font-weight:600">Servo 1</text><text x="786" y="112" class="pin">sinyal, 5 V, GND</text>`;
+  s += `<rect class="mod" x="770" y="166" width="170" height="62" rx="4"/><text x="786" y="192" style="font-weight:600">Servo 2</text><text x="786" y="212" class="pin">sinyal, 5 V, GND</text>`;
+  s += `<rect class="mod" x="770" y="276" width="170" height="34" rx="4"/><text x="786" y="298" style="font-weight:600">Tombol Mulai</text>`;
+  s += `<rect class="mod" x="770" y="336" width="170" height="34" rx="4"/><text x="786" y="358" style="font-weight:600">Tombol Bantu Warna</text>`;
+  s += `<rect class="mod" x="770" y="406" width="170" height="62" rx="4"/><text x="786" y="432" style="font-weight:600">Adaptor 5 V 2 A</text><text x="786" y="452" class="pin">+ kapasitor 1000 µF</text>`;
+  // jalur 5 V
+  s += `<path class="w5" d="M940,436 H962 V110 H940 M962,210 H940 M770,436 H620 V400 H590"/><text class="pin" x="580" y="404" text-anchor="end" style="fill:var(--ground)">VIN 5 V</text>`;
+  // ground bersama
+  s += `<path class="wg" d="M20,500 H962 M20,500 V240 H40 M20,390 H40 M490,426 V500 M862,468 V500 M950,500 V120 H940 M950,220 H940 M950,300 H940 M950,360 H940"/><text class="pin" x="490" y="516" text-anchor="middle">GND bersama</text>`;
+  W.innerHTML = s;
+})();
+
+// ---------------------------------------------------------------------
+//  Bagian 8: hasil uji
+// ---------------------------------------------------------------------
+(function buildUji() {
+  const body = $('#ujiBody');
+  if (!TEST_DATA.length) {
+    body.innerHTML = `<div class="empty"><h3>Pengujian sedang berjalan</h3><p class="muted">Tabel dan grafik akurasi per warna akan tampil di sini setelah alat diuji. Kami tidak memakai angka perkiraan.</p></div>
+      <div><h3 style="font-size:1em;margin-bottom:8px">Kondisi uji</h3><p class="muted" style="max-width:56ch">${KONDISI_UJI}</p></div>`;
+    return;
+  }
+  const rows = TEST_DATA.map(d => ({ ...d, salah: d.percobaan - d.benar, akurasi: d.percobaan ? d.benar / d.percobaan : 0 }));
+  const tot = rows.reduce((a, r) => ({ p: a.p + r.percobaan, b: a.b + r.benar }), { p: 0, b: 0 });
+  body.innerHTML = `<div class="stat"><b>${(tot.b / tot.p * 100).toFixed(0)}%</b><span>${tot.b} benar dari ${tot.p} percobaan</span></div>
+    <div class="bars">${rows.map(r => `<div class="row"><span>${r.warna}</span><div class="track"><div class="fill" style="width:${(r.akurasi * 100).toFixed(1)}%"></div></div><span class="data">${(r.akurasi * 100).toFixed(0)}%</span></div>`).join('')}</div>
+    <div class="tbl-wrap"><table class="spec"><thead><tr><th>Warna kain</th><th style="text-align:right">Percobaan</th><th style="text-align:right">Benar</th><th style="text-align:right">Salah</th><th style="text-align:right">Akurasi</th></tr></thead><tbody>
+    ${rows.map(r => `<tr><td>${r.warna}</td><td class="num">${r.percobaan}</td><td class="num">${r.benar}</td><td class="num">${r.salah}</td><td class="num">${(r.akurasi * 100).toFixed(0)}%</td></tr>`).join('')}</tbody></table></div>
+    <div><h3 style="font-size:1em;margin-bottom:8px">Kondisi uji</h3><p class="muted" style="max-width:56ch">${KONDISI_UJI}</p></div>`;
+})();
+
+// Bagian 10: tim
+$('#team').innerHTML = `<span class="nm">${TEAM.nama}</span><span>${TEAM.sekolah}</span><span class="muted">${TEAM.anggota.join(', ')}</span><span class="data" style="user-select:all">${TEAM.kontak}</span>`;
+
+pick('merah');
+layout(); onScroll(); requestAnimationFrame(render);
+
+</script>
+
+</body>
+</html>
